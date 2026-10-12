@@ -15,11 +15,10 @@
     </style>
 </head>
 <body>
-    <h2>行車紀錄查詢 v1.03</h2>
+    <h2>行車紀錄查詢 v1.04</h2>
     
     <div class="input-group">
         <label>車號：</label>
-        <!-- 增加 oninput 讓使用者輸入時即時轉大寫 -->
         <input type="text" id="carNumber" placeholder="請輸入車號" oninput="this.value = this.value.toUpperCase()">
     </div>
     <div class="input-group">
@@ -39,7 +38,6 @@
         const workerUrl = 'https://bus-gist-api.tpbus-eal-0079.workers.dev';
 
         async function searchGists() {
-            // 1. 車號去除首尾空白並強制轉大寫
             const carNum = document.getElementById('carNumber').value.trim().toUpperCase();
             const startInput = document.getElementById('startDate').value;
             const endInput = document.getElementById('endDate').value;
@@ -47,7 +45,6 @@
             
             resultsDiv.innerHTML = '';
 
-            // 檢查日期填寫
             if (!startInput || !endInput) {
                 resultsDiv.innerHTML = '<div class="error-msg"><strong>錯誤：</strong>請選擇開始日期與結束日期。</div>';
                 return;
@@ -59,7 +56,6 @@
             resultsDiv.innerHTML = '正在查詢中，請稍候...';
 
             try {
-                // 2. 存取 Worker API
                 const response = await fetch(workerUrl);
                 
                 if (!response.ok) {
@@ -74,7 +70,6 @@
 
                 let matchedResults = '';
 
-                // 3. 搜尋並比對紀錄
                 for (const gist of gists) {
                     const gistDate = new Date(gist.created_at);
 
@@ -87,24 +82,23 @@
                             
                             const content = await rawResponse.text();
 
-                            // 比對時將檔案內容也轉為大寫，避免大小寫不符合而找不到
                             if (!carNum || content.toUpperCase().includes(carNum)) {
-                                // 利用正規表達式抓取所有時間格式 (如 13:00:47)
-                                const timeMatches = content.match(/\d{2}:\d{2}:\d{2}/g);
+                                // 修正 1：\d{1,2} 允許個位數小時 (如 9:05:12)
+                                const timeMatches = content.match(/\d{1,2}:\d{2}:\d{2}/g);
                                 let timeRangeText = '';
 
                                 if (timeMatches && timeMatches.length > 0) {
-                                    const firstTime = timeMatches[0]; // 第一站時間
-                                    const lastTime = timeMatches[timeMatches.length - 1]; // 最後一站時間
+                                    const firstTime = timeMatches[0];
+                                    const lastTime = timeMatches[timeMatches.length - 1];
                                     timeRangeText = `(${firstTime} ~ ${lastTime})`;
                                 } else {
-                                    // 備用方案：若沒抓到表格時間則顯示 Gist 建立時間
-                                    timeRangeText = `(${gistDate.toLocaleTimeString()})`;
+                                    // 修正 2：備用方案強制顯示 24 小時制 (hour12: false)
+                                    const fallbackTime = gistDate.toLocaleTimeString('zh-TW', { hour12: false });
+                                    timeRangeText = `(${fallbackTime})`;
                                 }
 
                                 const displayCarNum = carNum || '行車';
 
-                                // 格式化日期為 YYYY/MM/DD (例如: 2026/10/11)
                                 const year = gistDate.getFullYear();
                                 const month = String(gistDate.getMonth() + 1).padStart(2, '0');
                                 const day = String(gistDate.getDate()).padStart(2, '0');
