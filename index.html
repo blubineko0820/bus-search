@@ -7,8 +7,10 @@
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; }
         .input-group { margin-bottom: 10px; }
-        .result-item { border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 5px; }
-        pre { background-color: #f4f4f4; padding: 10px; overflow-x: auto; }
+        .result-item { border: 1px solid #ccc; padding: 15px; margin-top: 10px; border-radius: 5px; background-color: #fafafa; }
+        .result-item h3 { margin-top: 0; margin-bottom: 8px; color: #333; }
+        .result-item a { color: #0056b3; text-decoration: none; font-weight: bold; }
+        .result-item a:hover { text-decoration: underline; }
         .error-msg { color: #d8000c; background-color: #ffbaba; border: 1px solid #d8000c; padding: 10px; border-radius: 5px; margin-top: 10px; }
     </style>
 </head>
@@ -33,7 +35,6 @@
     <div id="results" style="margin-top: 20px;"></div>
 
     <script>
-        // ⚠️ 請確認這裡已替換成您實際的 Cloudflare Worker 網址
         const workerUrl = 'https://bus-gist-api.tpbus-eal-0079.workers.dev';
 
         async function searchGists() {
@@ -44,13 +45,12 @@
             
             resultsDiv.innerHTML = '';
 
-            // 1. 檢查日期是否有填寫
+            // 1. 檢查日期填寫
             if (!startInput || !endInput) {
                 resultsDiv.innerHTML = '<div class="error-msg"><strong>錯誤：</strong>請選擇開始日期與結束日期。</div>';
                 return;
             }
 
-            // 設定搜尋時間範圍為當天的 00:00:00 到 23:59:59 (完整涵蓋當天)
             const start = new Date(`${startInput}T00:00:00`);
             const end = new Date(`${endInput}T23:59:59`);
 
@@ -86,11 +86,25 @@
                             const content = await rawResponse.text();
 
                             if (!carNum || content.includes(carNum)) {
+                                // 利用正規表達式抓取所有時間格式 (如 13:00:47)
+                                const timeMatches = content.match(/\d{2}:\d{2}:\d{2}/g);
+                                let timeRangeText = '';
+
+                                if (timeMatches && timeMatches.length > 0) {
+                                    const firstTime = timeMatches[0]; // 第一站時間
+                                    const lastTime = timeMatches[timeMatches.length - 1]; // 最後一站時間
+                                    timeRangeText = `(${firstTime} ~ ${lastTime})`;
+                                } else {
+                                    // 備用方案：若沒抓到表格時間則顯示 Gist 建立時間
+                                    timeRangeText = `(${gistDate.toLocaleTimeString()})`;
+                                }
+
+                                const displayCarNum = carNum || '行車';
+
                                 matchedResults += `
                                 <div class="result-item">
-                                    <h3>符合紀錄 (建立時間: ${gistDate.toLocaleString()})</h3>
-                                    <a href="${gist.html_url}" target="_blank">🔗 在 GitHub 上查看原始 Gist</a>
-                                    <pre>${content}</pre>
+                                    <h3>${displayCarNum} 行車紀錄 ${timeRangeText}</h3>
+                                    <a href="${gist.html_url}" target="_blank">🔗 點我查看連結</a>
                                 </div>`;
                             }
                         }
@@ -101,7 +115,6 @@
 
             } catch (error) {
                 console.error(error);
-                // 顯示錯誤訊息與錯誤碼在下方
                 resultsDiv.innerHTML = `
                     <div class="error-msg">
                         <strong>查詢失敗（錯誤訊息/代碼）：</strong><br>
