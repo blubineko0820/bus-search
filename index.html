@@ -7,24 +7,25 @@
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; }
         .input-group { margin-bottom: 10px; }
-        .result-item { border: 1px solid #ccc; padding: 10px; margin-top: 10px; }
+        .result-item { border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 5px; }
         pre { background-color: #f4f4f4; padding: 10px; overflow-x: auto; }
+        .error-msg { color: #d8000c; background-color: #ffbaba; border: 1px solid #d8000c; padding: 10px; border-radius: 5px; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <h2>行車紀錄查詢 (透過 Cloudflare Worker 代理)</h2>
+    <h2>行車紀錄查詢</h2>
     
     <div class="input-group">
         <label>車號：</label>
-        <input type="text" id="carNumber" placeholder="輸入車號 (例: FAB-191)">
+        <input type="text" id="carNumber" placeholder="請輸入車號">
     </div>
     <div class="input-group">
-        <label>開始時間：</label>
-        <input type="datetime-local" id="startTime">
+        <label>開始日期：</label>
+        <input type="date" id="startDate">
     </div>
     <div class="input-group">
-        <label>結束時間：</label>
-        <input type="datetime-local" id="endTime">
+        <label>結束日期：</label>
+        <input type="date" id="endDate">
     </div>
     
     <button onclick="searchGists()">查詢紀錄</button>
@@ -32,35 +33,82 @@
     <div id="results" style="margin-top: 20px;"></div>
 
     <script>
-        // ⚠️ 請在這裡填入您的 Cloudflare Worker 網址
+        // ⚠️ 請確認這裡已替換成您實際的 Cloudflare Worker 網址
         const workerUrl = 'https://bus-gist-api.tpbus-eal-0079.workers.dev';
 
         async function searchGists() {
             const carNum = document.getElementById('carNumber').value.trim();
-            const startInput = document.getElementById('startTime').value;
-            const endInput = document.getElementById('endTime').value;
+            const startInput = document.getElementById('startDate').value;
+            const endInput = document.getElementById('endDate').value;
             const resultsDiv = document.getElementById('results');
             
+            resultsDiv.innerHTML = '';
+
+            // 1. 檢查日期是否有填寫
             if (!startInput || !endInput) {
-                alert("請輸入完整的時間範圍");
+                resultsDiv.innerHTML = '<div class="error-msg"><strong>錯誤：</strong>請選擇開始日期與結束日期。</div>';
                 return;
             }
 
-            const start = new Date(startInput);
-            const end = new Date(endInput);
-            resultsDiv.innerHTML = '正在透過 Worker 查詢中，請稍候...';
+            // 設定搜尋時間範圍為當天的 00:00:00 到 23:59:59 (完整涵蓋當天)
+            const start = new Date(`${startInput}T00:00:00`);
+            const end = new Date(`${endInput}T23:59:59`);
+
+            resultsDiv.innerHTML = '正在查詢中，請稍候...';
 
             try {
-                // 1. 透過 Cloudflare Worker 取得 Gist 列表 (已在後台夾帶 Token，不受 60 次限制)
+                // 2. 存取 Worker API
                 const response = await fetch(workerUrl);
-                if (!response.ok) throw new Error('Worker 請求失敗');
-                const gists = await response.json();
                 
+                if (!response.ok) {
+                    throw new Error(`HTTP 錯誤狀態碼: ${response.status} (${response.statusText || 'API 請求失敗'})`);
+                }
+                
+                const gists = await response.json();
+
+                if (!Array.isArray(gists)) {
+                    throw new Error(`回傳資料格式錯誤：${JSON.stringify(gists)}`);
+                }
+
                 let matchedResults = '';
 
-                // 2. 遍歷並篩選
+                // 3. 搜尋並比對紀錄
                 for (const gist of gists) {
                     const gistDate = new Date(gist.created_at);
 
-                    // 初步判斷 Gist 建立日期是否在範圍內
-                    if (gistDate
+                    if (gistDate >= start && gistDate <= end) {
+                        if (gist.files && gist.files['Record.md']) {
+                            const rawUrl = gist.files['Record.md'].raw_url;
+                            const rawResponse = await fetch(rawUrl);
+                            
+                            if (!rawResponse.ok) continue;
+                            
+                            const content = await rawResponse.text();
+
+                            if (!carNum || content.includes(carNum)) {
+                                matchedResults += `
+                                <div class="result-item">
+                                    <h3>符合紀錄 (建立時間: ${gistDate.toLocaleString()})</h3>
+                                    <a href="${gist.html_url}" target="_blank">🔗 在 GitHub 上查看原始 Gist</a>
+                                    <pre>${content}</pre>
+                                </div>`;
+                            }
+                        }
+                    }
+                }
+
+                resultsDiv.innerHTML = matchedResults || '查無該車號紀錄。';
+
+            } catch (error) {
+                console.error(error);
+                // 顯示錯誤訊息與錯誤碼在下方
+                resultsDiv.innerHTML = `
+                    <div class="error-msg">
+                        <strong>查詢失敗（錯誤訊息/代碼）：</strong><br>
+                        <code>${error.message || error}</code>
+                    </div>`;
+            }
+        }
+    </script>
+</body>
+</html>
