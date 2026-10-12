@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>車輛歷史紀錄查詢系統</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 650px; margin: 30px auto; padding: 0 15px; background: #f8f9fa; }
+    .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h2 { margin-top: 0; color: #333; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+    button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .result-item { background: #eef2f5; margin-top: 10px; padding: 12px; border-radius: 5px; border-left: 4px solid #007bff; }
+    .raw-link { color: #007bff; text-decoration: none; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>🚌 車輛 Gist 紀錄查詢器</h2>
+  
+  <div class="form-group">
+    <label for="carId">車牌號碼 / 車號：</label>
+    <input type="text" id="carId" placeholder="例如：EAA-1234">
+  </div>
+  
+  <div class="form-group">
+    <label for="startTime">開始時間：</label>
+    <input type="datetime-local" id="startTime">
+  </div>
+  
+  <div class="form-group">
+    <label for="endTime">結束時間：</label>
+    <input type="datetime-local" id="endTime">
+  </div>
+  
+  <button onclick="searchGistHistory()">開始查詢</button>
+</div>
+
+<div id="status" style="margin-top: 15px; text-align: center;"></div>
+<div id="results" style="margin-top: 15px;"></div>
+
+<script>
+  // ⚙️ 設定區：貼上你的預設 Gist ID（若每台車各自獨立，可搭配對照表調整）
+  const DEFAULT_GIST_ID = "你的_GIST_ID_放在這裡";
+
+  async function searchGistHistory() {
+    const carId = document.getElementById("carId").value.trim().toUpperCase();
+    const startTime = document.getElementById("startTime").value;
+    const endTime = document.getElementById("endTime").value;
+    const statusDiv = document.getElementById("status");
+    const resultsDiv = document.getElementById("results");
+
+    resultsDiv.innerHTML = "";
+    
+    if (!startTime || !endTime) {
+      alert("請選擇完整的查詢時間範圍！");
+      return;
+    }
+
+    statusDiv.innerHTML = "⏳ 查詢中，請稍候...";
+
+    const startDt = new Date(startTime);
+    const endDt = new Date(endTime);
+
+    try {
+      // 呼叫 GitHub API 取得所有 Commit 修訂紀錄
+      const response = await fetch(`https://api.github.com/gists/${DEFAULT_GIST_ID}/commits?per_page=100`);
+      if (!response.ok) throw new Error("存取 Gist 失敗，請確認 Gist ID 是否正確。");
+      
+      const commits = await response.json();
+      let matchCount = 0;
+
+      for (const commit of commits) {
+        const commitDt = new Date(commit.committed_at);
+
+        // 1. 先篩選時間區段
+        if (commitDt >= startDt && commitDt <= endDt) {
+          const rawUrl = `https://gist.githubusercontent.com/raw/${DEFAULT_GIST_ID}/${commit.version}`;
+          
+          // 2. 抓取該 Commit 的原始文字內容，確認是否包含指定的「車號」
+          const contentRes = await fetch(rawUrl);
+          const textContent = await contentRes.text();
+
+          // 如果車號為空，或內容有匹配到車號
+          if (!carId || textContent.includes(carId)) {
+            matchCount++;
+            
+            const item = document.createElement("div");
+            item.className = "result-item";
+            item.innerHTML = `
+              <strong>🕒 修改時間：</strong> ${commitDt.toLocaleString("zh-TW")}<br>
+              <strong>🆔 版本 SHA：</strong> <code>${commit.version.substring(0, 7)}</code><br>
+              <a class="raw-link" href="${rawUrl}" target="_blank">📄 點此檢視當下完整記錄 (Raw)</a>
+            `;
+            resultsDiv.appendChild(item);
+          }
+        }
+      }
+
+      if (matchCount === 0) {
+        statusDiv.innerHTML = "❌ 在此時間區段內未找到相關車號紀錄。";
+      } else {
+        statusDiv.innerHTML = `✅ 查詢完成，共找到 ${matchCount} 筆相關紀錄！`;
+      }
+
+    } catch (err) {
+      statusDiv.innerHTML = `⚠️ 發生錯誤：${err.message}`;
+    }
+  }
+</script>
+
+</body>
+</html>
